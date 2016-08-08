@@ -315,6 +315,7 @@ import openfl.utils.ByteArray;
 	public var RGB888 = 0;
 	public var RGBA8888 = 1;
 	public var COMPRESSED = 2;
+	public var COMPRESSED_WITH_ALPHA = 4;
 	public var BLOCK = 5;
 	
 }
