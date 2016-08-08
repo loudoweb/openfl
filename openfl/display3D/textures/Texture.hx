@@ -1,17 +1,15 @@
 package openfl.display3D.textures;
 
 
+import haxe.Timer;
 import lime.graphics.opengl.GL;
 import lime.utils.ArrayBufferView;
 import lime.utils.UInt8Array;
 import openfl._internal.stage3D.GLUtils;
 import openfl.display.BitmapData;
-import openfl.events.Event;
-import openfl.events.TimerEvent;
 import openfl.errors.IllegalOperationError;
-import openfl.errors.RangeError;
+import openfl.events.Event;
 import openfl.utils.ByteArray;
-import haxe.Timer;
 
 
 @:final class Texture extends TextureBase {
@@ -128,7 +126,7 @@ import haxe.Timer;
 		
 		GL.bindTexture (__textureTarget, __textureID);
 		GLUtils.CheckGLError ();
-		
+
 		GL.texImage2D (__textureTarget, 0, __internalFormat, __width, __height, 0, __format, GL.UNSIGNED_BYTE, data);
 		
 		__allocated = true;
@@ -204,32 +202,45 @@ import haxe.Timer;
 		
 		data.position = byteArrayOffset;
 		
-		var version = __getATFVersion (data);
-		var length = (version == 0) ? __readUInt24 (data) : __readUInt32 (data);
+		var signature:String = data.readUTFBytes(3);
+        if (signature != "ATF") {
+			
+			throw new IllegalOperationError ("ATF signature not found");
+			
+		}
 		
+		
+        data.position = 7;//skip reserved U32
+
+        var version = data.readUnsignedByte();
+		
+		var length = (version == 0) ? __readUInt24 (data) : __readUInt32 (data);
 		if (cast ((byteArrayOffset + length), Int) > data.length) {
 			
 			throw new IllegalOperationError ("ATF length exceeds byte array length");
 			
 		}
 		
-		var tdata = data.readUnsignedByte();
-		var type:AtfType = cast (tdata >> 7);
+        var tdata:Int = data.readUnsignedByte();
 		
+		// UB[1]
+        var type:AtfType = cast (tdata >> 7);
 		if (type != AtfType.NORMAL) {
 			
 			throw new IllegalOperationError ("ATF Cube maps are not supported");
 			
 		}
 		
+         // UB[7]
+        var format:AtfFormat = cast(tdata & 0x7f);
 		//Removing ATF format limitation to allow for multiple format support.
 		//AtfFormat format = (AtfFormat)(tdata & 0x7f);	
 		//if (format != AtfFormat.Block) {
 		//	throw new NotImplementedException("Only ATF block compressed textures are supported");
 		//}
-		
-		var width:Int = (1 << cast data.readUnsignedByte ());
-		var height:Int = (1 << cast data.readUnsignedByte ());
+       
+        var width:Int = Std.int(Math.pow(2, data.readUnsignedByte()));
+        var height:Int = Std.int(Math.pow(2, data.readUnsignedByte()));
 		
 		if (width != __width || height != __height) {
 			
@@ -237,7 +248,20 @@ import haxe.Timer;
 			
 		}
 		
-		var mipCount:Int = cast data.readUnsignedByte ();
+        var count:Int = data.readUnsignedByte();
+		
+		//trace(signature, version, type, format, width, height, length, count);
+		
+		var blockLength = __readUInt32 (data);
+		
+		var jpegxr : ByteArray = new ByteArray();
+		jpegxr.writeBytes( data, data.position, blockLength ); //consider as RGBA88888 for this test
+		//uploadFromByteArray (jpegxr, 0);//TOFIX
+		
+		
+		
+		
+		/*var mipCount:Int = cast data.readUnsignedByte ();
 		
 		for (level in 0...mipCount) {
 			
@@ -251,7 +275,7 @@ import haxe.Timer;
 						throw new System.IO.InvalidDataException("Block length exceeds ATF file length");
 					}*/
 				
-				if (blockLength > 0) {
+				/*if (blockLength > 0) {
 					
 					if (gpuFormat == 1) {
 						
@@ -271,7 +295,7 @@ import haxe.Timer;
 				
 			}
 			
-		}
+		}*/
 		
 	}
 	
