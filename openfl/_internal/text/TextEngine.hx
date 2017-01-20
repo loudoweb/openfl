@@ -7,7 +7,6 @@ import lime.graphics.cairo.CairoFontFace;
 import lime.graphics.opengl.GLTexture;
 import lime.system.System;
 import lime.text.TextLayout;
-import openfl.display.Tilesheet;
 import openfl.events.Event;
 import openfl.events.FocusEvent;
 import openfl.events.MouseEvent;
@@ -47,7 +46,11 @@ class TextEngine {
 	private static inline var UTF8_ENDLINE = 10;
 	private static inline var UTF8_SPACE = 32;
 	private static inline var UTF8_HYPHEN = 0x2D;
-	
+	#if (js && html5)
+	private static inline var DECIMAL_PRECISION_MULTIPLIER = 100;
+	private static inline var DECIMAL_PRECISION_DIVIDER = 0.01;
+	#end
+
 	private static var __defaultFonts = new Map<String, Font> ();
 	
 	#if (js && html5)
@@ -64,7 +67,6 @@ class TextEngine {
 	public var bottomScrollV (default, null):Int;
 	public var bounds:Rectangle;
 	public var caretIndex:Int;
-	public var displayAsPassword:Bool;
 	public var embedFonts:Bool;
 	public var gridFitType:GridFitType;
 	public var height:Float;
@@ -92,6 +94,7 @@ class TextEngine {
 	public var type:TextFieldType;
 	public var width:Float;
 	public var wordWrap:Bool;
+	public var displayAsPassword:Bool;
 	
 	private var textField:TextField;
 	
@@ -106,14 +109,19 @@ class TextEngine {
 	@:noCompletion private var __textFormat:TextFormat;
 	@:noCompletion private var __textLayout:TextLayout;
 	@:noCompletion private var __texture:GLTexture;
-	@:noCompletion private var __tileData:Map<Tilesheet, Array<Float>>;
-	@:noCompletion private var __tileDataLength:Map<Tilesheet, Int>;
-	@:noCompletion private var __tilesheets:Map<Tilesheet, Bool>;
+	//@:noCompletion private var __tileData:Map<Tilesheet, Array<Float>>;
+	//@:noCompletion private var __tileDataLength:Map<Tilesheet, Int>;
+	//@:noCompletion private var __tilesheets:Map<Tilesheet, Bool>;
 	
 	@:noCompletion @:dox(hide) public var __cairoFont:CairoFontFace;
 	@:noCompletion @:dox(hide) public var __font:Font;
 	
 	#if (js && html5)
+	private static var __isIE11:Null<Bool>;
+
+	private static var __currentFormatUpscaledFont:Null<String>;
+	private static var __currentFormatFont:Null<String>;
+
 	private var __hiddenInput:InputElement;
 	#end
 	
@@ -130,7 +138,6 @@ class TextEngine {
 		
 		type = TextFieldType.DYNAMIC;
 		autoSize = TextFieldAutoSize.NONE;
-		displayAsPassword = false;
 		embedFonts = false;
 		selectable = true;
 		borderColor = 0x000000;
@@ -162,9 +169,25 @@ class TextEngine {
 	}
 	
 	
+	#if (js && html5)
+	private static function isIE11():Bool {
+
+		if (__isIE11 != null) return __isIE11;
+
+		var navigator = Browser.navigator;
+
+		var isTrident = ~/Trident\/7.0/.match(navigator.userAgent);
+		var hasRevision = navigator.userAgent.indexOf("rv:11") >= 0;
+
+		return (__isIE11 = (isTrident && hasRevision));
+
+	}
+	#end
+
+
 	private static function findFont (name:String):Font {
 		
-		#if (cpp || neko || nodejs)
+		#if (lime_cffi)
 		
 		for (registeredFont in Font.__registeredFonts) {
 			
@@ -204,13 +227,50 @@ class TextEngine {
 	}
 	
 	
-	public static function getFont (format:TextFormat):String {
+	public static function getFormatHeight (format:TextFormat):Float {
+		
+		var ascent, descent, leading;
+		
+		#if (js && html5)
+		
+		__context.font = getFont (format);
+		
+		ascent = format.size;
+		descent = format.size * 0.185;
+		leading = format.leading;
+		
+		#elseif (lime_cffi)
+		
+		var font = getFontInstance (format);
+		
+		if (font != null) {
+			
+			ascent = (font.ascender / font.unitsPerEM) * format.size;
+			descent = Math.abs ((font.descender / font.unitsPerEM) * format.size);
+			leading = format.leading;
+			
+		} else {
+			
+			ascent = format.size;
+			descent = format.size * 0.185;
+			leading = format.leading;
+			
+		}
+		
+		#end
+		
+		return ascent + descent + leading;
+		
+	}
+	
+	
+	public static function getFont (format:TextFormat, scale:Float = 1):String {
 		
 		var font = format.italic ? "italic " : "normal ";
 		font += "normal ";
 		font += format.bold ? "bold " : "normal ";
-		font += format.size + "px";
-		font += "/" + (format.size + format.leading + 6) + "px ";
+		font += format.size * scale + "px";
+		font += "/" + (format.size * scale + format.leading + 6) + "px ";
 		
 		font += "" + switch (format.font) {
 			
@@ -228,7 +288,7 @@ class TextEngine {
 	
 	public static function getFontInstance (format:TextFormat):Font {
 		
-		#if (cpp || neko || nodejs)
+		#if (lime_cffi)
 		
 		var instance = null;
 		var fontList = null;
@@ -380,7 +440,7 @@ class TextEngine {
 				
 			} else {
 				
-				fontList = [ systemFontDirectory + "/timesb.ttf" ];
+				fontList = [ systemFontDirectory + "/timesbd.ttf" ];
 				
 			}
 			
@@ -448,6 +508,19 @@ class TextEngine {
 			return text.substring (index > 0 ? lineBreaks[index - 1] : 0, lineBreaks[index]);
 			
 		}
+		
+	}
+	
+	
+	public function getLineBreakIndex (startIndex:Int = 0):Int {
+		
+		var cr = text.indexOf ("\n", startIndex);
+		var lf = text.indexOf ("\r", startIndex);
+		
+		if (cr == -1) return lf;
+		if (lf == -1) return cr;
+		
+		return cr < lf ? cr : lf;
 		
 	}
 	
@@ -546,6 +619,27 @@ class TextEngine {
 			
 		}
 		
+		if (autoSize != NONE) {
+			
+			switch (autoSize) {
+				
+				case LEFT, RIGHT, CENTER:
+					
+					if (!wordWrap && (width < textWidth + 4)) {
+						
+						width = textWidth + 4;
+						
+					}
+					
+					height = textHeight + 4;
+					bottomScrollV = numLines;
+				
+				default:
+					
+				
+			}
+		}
+		
 		if (textWidth > width - 4) {
 			
 			maxScrollH = Std.int (textWidth - width + 4);
@@ -581,7 +675,7 @@ class TextEngine {
 		var spaceWidth = 0.0;
 		var previousSpaceIndex = 0;
 		var spaceIndex = text.indexOf (" ");
-		var breakIndex = text.indexOf ("\n");
+		var breakIndex = getLineBreakIndex ();
 		
 		var marginRight = 0.0;
 		var offsetX = 2.0;
@@ -598,9 +692,23 @@ class TextEngine {
 			
 			#if (js && html5)
 			
+			var divider = 1.0;
+
+			if (isIE11 ()) {
+				divider = DECIMAL_PRECISION_DIVIDER;
+
+				__context.font = __currentFormatUpscaledFont;
+			}
+
 			for (i in startIndex...endIndex) {
 				
-				advances.push (__context.measureText (text.charAt (i)).width);
+				advances.push (__context.measureText(text.charAt (i)).width * divider);
+
+			}
+
+			if (isIE11 ()) {
+
+				__context.font = __currentFormatFont;
 				
 			}
 			
@@ -655,7 +763,24 @@ class TextEngine {
 			
 			#if (js && html5)
 			
-			return __context.measureText (text).width;
+			var result:Float = 0;
+			var divider = 1.0;
+
+			if (isIE11 ()) {
+				divider = DECIMAL_PRECISION_DIVIDER;
+
+				__context.font = __currentFormatUpscaledFont;
+			}
+
+			result = __context.measureText(text).width * divider;
+
+			if (isIE11 ()) {
+
+				__context.font = __currentFormatFont;
+
+			}
+
+			return result;
 			
 			#else
 			
@@ -700,7 +825,13 @@ class TextEngine {
 				
 				#if (js && html5)
 				
-				__context.font = getFont (currentFormat);
+				__context.font = __currentFormatFont = getFont (currentFormat);
+
+				if (isIE11()) {
+
+					__currentFormatUpscaledFont = getFont(currentFormat, DECIMAL_PRECISION_MULTIPLIER);
+
+				}
 				
 				ascent = currentFormat.size;
 				descent = currentFormat.size * 0.185;
@@ -708,7 +839,7 @@ class TextEngine {
 				
 				heightValue = ascent + descent + leading;
 				
-				#elseif (cpp || neko || nodejs)
+				#elseif (lime_cffi)
 				
 				font = getFontInstance (currentFormat);
 				
@@ -776,18 +907,18 @@ class TextEngine {
 					lineIndex++;
 					
 				}
-
+				
 				if (formatRange.end == breakIndex) {
 					
 					nextFormatRange ();
 					lineFormat = formatRange.format;
 					
 				}
-
+				
 				textIndex = breakIndex + 1;
-				breakIndex = text.indexOf ("\n", textIndex);
+				breakIndex = getLineBreakIndex (textIndex);
 				lineIndex++;
-
+				
 			} else if (formatRange.end >= spaceIndex && spaceIndex > -1) {
 				
 				layoutGroup = null;
@@ -795,6 +926,7 @@ class TextEngine {
 				
 				while (true) {
 					
+					//if (textIndex == formatRange.end) break;
 					if (spaceIndex == -1) spaceIndex = formatRange.end;
 					
 					advances = getAdvances (text, textIndex, spaceIndex);
@@ -867,7 +999,7 @@ class TextEngine {
 						layoutGroup.height = heightValue;
 						layoutGroups.push (layoutGroup);
 						
-						offsetX += widthValue + spaceWidth;
+						offsetX = widthValue + spaceWidth;
 						marginRight = spaceWidth;
 						
 						wrap = false;
@@ -927,16 +1059,16 @@ class TextEngine {
 						layoutGroup = null;
 						nextFormatRange ();
 						
+						if (spaceIndex == -1 && textIndex <= text.length) {
+
+							textIndex--;
+							offsetX -= spaceWidth;
+
+						}
 					}
 					
 					if ((spaceIndex > breakIndex && breakIndex > -1) || textIndex > text.length || spaceIndex > formatRange.end || (spaceIndex == -1 && breakIndex > -1)) {
 
-						if (spaceIndex > formatRange.end) {
-
-							textIndex--;
-
-						}
-						
 						break;
 						
 					}
@@ -950,9 +1082,9 @@ class TextEngine {
 					break;
 					
 				}
-
+				
 				if (textIndex < formatRange.end) {
-
+					
 					layoutGroup = new TextLayoutGroup (formatRange.format, textIndex, formatRange.end);
 					layoutGroup.advances = getAdvances (text, textIndex, formatRange.end);
 					layoutGroup.offsetX = offsetX;
@@ -964,13 +1096,13 @@ class TextEngine {
 					layoutGroup.width = getAdvancesWidth (layoutGroup.advances);
 					layoutGroup.height = heightValue;
 					layoutGroups.push (layoutGroup);
-
+					
 					offsetX += layoutGroup.width;
-
+					
 					textIndex = formatRange.end;
-
+					
 				}
-
+				
 				nextFormatRange ();
 				
 			}
@@ -1044,7 +1176,8 @@ class TextEngine {
 								
 								group = layoutGroups[i + lineLength - 1];
 								
-								if (group.endIndex < text.length && text.charAt (group.endIndex) != "\n") {
+								var endChar = text.charAt (group.endIndex);
+								if (group.endIndex < text.length && endChar != "\n" && endChar != "\r") {
 									
 									offsetX = (width - 4 - lineWidths[lineIndex]) / (lineLength - 1);
 									

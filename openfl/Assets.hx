@@ -377,7 +377,7 @@ class Assets {
 	public static function isLocal (id:String, type:AssetType = null, useCache:Bool = true):Bool {
 		
 		#if (tools && !display)
-		
+
 		if (useCache && cache.enabled) {
 			
 			if (type == AssetType.IMAGE || type == null) {
@@ -393,7 +393,7 @@ class Assets {
 			}
 			
 			if (type == AssetType.SOUND || type == AssetType.MUSIC || type == null) {
-				
+
 				if (cache.hasSound (id)) return true;
 				
 			}
@@ -405,7 +405,7 @@ class Assets {
 		var library = getLibrary (libraryName);
 		
 		if (library != null) {
-			
+
 			return library.isLocal (symbolName, cast type);
 			
 		}
